@@ -4,12 +4,13 @@
 
 #![allow(dead_code)]
 #![allow(unreachable_code)]
+#![allow(unused_imports)]
 
 use kernel::{
-    c_str, faux,
+    faux,
     iio::{
         self,
-        channels::{ChannelType, SensorData, Specification},
+        channels::{self, Channel, ChannelType, SensorData, Specification},
         Device, DeviceRef, Driver, RegistrationOptions,
     },
     new_mutex,
@@ -26,19 +27,19 @@ module! {
 }
 
 struct DummyModule {
-    indio_dev: iio::Device<DummyDevice>,
     fdev: faux::Registration,
+    indio_dev: iio::Device<DummyDevice>,
 }
 
 impl kernel::Module for DummyModule {
     fn init(module: &'static ThisModule) -> kernel::error::Result<Self> {
         pr_info!("Initialising Rust IIO Dummy Driver\n");
 
-        let fdev = faux::Registration::new(c_str!("rust-faux-parent"), None)?;
+        let fdev = faux::Registration::new(c"rust-faux-parent", None)?;
         let dev = ARef::from(fdev.as_ref());
 
         let options = RegistrationOptions {
-            name: c_str!("rust-iio-driver"),
+            name: c"rust-iio-driver",
             modes: iio::Mode::Direct,
         };
 
@@ -59,7 +60,7 @@ struct DummyState {
 impl DummyState {
     fn init(_dev: DeviceRef<'_>) -> impl PinInit<Self, Error> {
         try_pin_init!(Self {
-            dac_val <- new_mutex!(0)
+            dac_val <- new_mutex!(717)
         })
     }
 }
@@ -67,6 +68,12 @@ impl DummyState {
 #[vtable]
 impl Driver for DummyDevice {
     type Data = DummyState;
+
+    const CHANNELS: &'static [Channel] = &[Specification::new(ChannelType::Voltage)
+        .info_mask_separate(channels::RAW.or(channels::OFFSET).or(channels::SCALE))
+        .channel_idx(0)
+        .as_output()
+        .as_channel()];
 
     fn read_raw(indio_dev: &Device<Self>, channel: &Specification) -> Result<SensorData> {
         if matches!(channel.channel_type(), ChannelType::Voltage) {
@@ -78,6 +85,6 @@ impl Driver for DummyDevice {
     }
 
     fn write_raw(_device: &iio::Device<Self>) -> Result {
-        todo!()
+        Err(EINVAL)
     }
 }

@@ -98,7 +98,7 @@ impl<T: Driver> Device<T> {
         data
     }
 
-    pub fn data_mut(&self) -> Pin<&mut T::Data> {
+    pub fn data_mut(&mut self) -> Pin<&mut T::Data> {
         let data: *mut T::Data = unsafe { bindings::iio_priv(self.indio_dev.as_ptr()) }.cast();
         let data = unsafe { &mut *data };
         let data = unsafe { Pin::new_unchecked(data) };
@@ -147,10 +147,12 @@ impl<T: Driver> IioVTableAdapter<T> {
         _val2: *mut ffi::c_int,
         _mask: isize,
     ) -> ffi::c_int {
-        let indio_dev: Device<T> = Device {
+        // Manually drop so that Device::drop doesn't unregister at the end of the scope
+        // Alternative is to use something like DeviceRef
+        let indio_dev: ManuallyDrop<Device<T>> = ManuallyDrop::new(Device {
             indio_dev: NonNull::new(indio_dev).unwrap(),
             _priv: PhantomData,
-        };
+        });
 
         let channel = unsafe { &*iio_chan_spec.cast::<Specification<Simple>>() };
 

@@ -6,6 +6,7 @@
 /// Duplicate scan index
 /// Cannot use labels and extended_name at the same time
 /// Multi-long available scan masks not fully supported
+use crate::bits;
 use core::{
     fmt,
     marker::PhantomData,
@@ -295,8 +296,6 @@ pub enum ChannelType {
 }
 
 use macros::kunit_tests;
-
-use crate::bits;
 #[kunit_tests(rust_iio_channels)]
 mod test {
 
