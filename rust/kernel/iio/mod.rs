@@ -3,6 +3,8 @@
 #![allow(missing_docs)]
 #![allow(unused_imports)]
 #![allow(unreachable_code)]
+pub mod channels;
+
 use core::{
     marker::PhantomData,
     mem::{self, ManuallyDrop, MaybeUninit},
@@ -12,6 +14,7 @@ use core::{
 use crate::{
     device,
     error::{to_result, VTABLE_DEFAULT_ERROR},
+    iio::channels::{Channel, SensorData, Simple, Specification},
     prelude::*,
     str::CStr,
     sync::aref::ARef,
@@ -87,6 +90,20 @@ impl<T: Driver> Device<T> {
             _priv: PhantomData,
         })
     }
+
+    pub fn data(&self) -> Pin<&T::Data> {
+        let data: *const T::Data = unsafe { bindings::iio_priv(self.indio_dev.as_ptr()) }.cast();
+        let data = unsafe { &*data };
+        let data = unsafe { Pin::new_unchecked(data) };
+        data
+    }
+
+    pub fn data_mut(&self) -> Pin<&mut T::Data> {
+        let data: *mut T::Data = unsafe { bindings::iio_priv(self.indio_dev.as_ptr()) }.cast();
+        let data = unsafe { &mut *data };
+        let data = unsafe { Pin::new_unchecked(data) };
+        data
+    }
 }
 
 impl<T: Driver> Drop for Device<T> {
@@ -106,14 +123,12 @@ pub enum Mode {
     Direct = bindings::INDIO_DIRECT_MODE,
 }
 
-pub struct Channel;
-
 #[vtable]
 pub trait Driver: Sized {
     const CHANNELS: &'static [Channel] = &[];
     type Data: Send + Sync;
 
-    fn read_raw(device: &Device<Self>) {
+    fn read_raw(data: &Device<Self>, channel: &Specification) -> Result<SensorData> {
         build_error!(VTABLE_DEFAULT_ERROR)
     }
 
@@ -132,8 +147,28 @@ impl<T: Driver> IioVTableAdapter<T> {
         _val2: *mut ffi::c_int,
         _mask: isize,
     ) -> ffi::c_int {
-        todo!()
+        let indio_dev: Device<T> = Device {
+            indio_dev: NonNull::new(indio_dev).unwrap(),
+            _priv: PhantomData,
+        };
+
+        let channel = unsafe { &*iio_chan_spec.cast::<Specification<Simple>>() };
+
+        match T::read_raw(&indio_dev, channel) {
+            Ok(sdata) => {
+                pr_emerg!("read_raw successfully, sending data");
+                match &sdata {
+                    SensorData::Int(inner) => unsafe {
+                        let val = val as *mut MaybeUninit<i32>;
+                        (*val).write(*inner);
+                    },
+                }
+                sdata.sensor_value() as ffi::c_int
+            }
+            Err(e) => e.to_errno(),
+        }
     }
+
     unsafe extern "C" fn write_raw(
         indio_dev: *mut bindings::iio_dev,
         iio_chan_spec: *const bindings::iio_chan_spec,

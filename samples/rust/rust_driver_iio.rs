@@ -7,7 +7,11 @@
 
 use kernel::{
     c_str, faux,
-    iio::{self, DeviceRef, Driver, RegistrationOptions},
+    iio::{
+        self,
+        channels::{ChannelType, SensorData, Specification},
+        Device, DeviceRef, Driver, RegistrationOptions,
+    },
     new_mutex,
     prelude::*,
     sync::{aref::ARef, Mutex},
@@ -40,10 +44,7 @@ impl kernel::Module for DummyModule {
 
         let indio_dev =
             iio::Device::<DummyDevice>::register_with(dev, module, options, DummyState::init)?;
-        Ok(Self {
-            fdev,
-            indio_dev,
-        })
+        Ok(Self { fdev, indio_dev })
     }
 }
 
@@ -67,8 +68,13 @@ impl DummyState {
 impl Driver for DummyDevice {
     type Data = DummyState;
 
-    fn read_raw(_device: &iio::Device<Self>) {
-        todo!()
+    fn read_raw(indio_dev: &Device<Self>, channel: &Specification) -> Result<SensorData> {
+        if matches!(channel.channel_type(), ChannelType::Voltage) {
+            let val = indio_dev.data().dac_val.lock().clone();
+            Ok(SensorData::Int(val))
+        } else {
+            Err(EINVAL)
+        }
     }
 
     fn write_raw(_device: &iio::Device<Self>) -> Result {
