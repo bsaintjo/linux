@@ -70,12 +70,13 @@ impl<T: Driver> Device<T> {
         }
 
         unsafe {
-            addr_of_mut!((*indio_dev.as_ptr()).name).write(options.name.as_char_ptr());
-            addr_of_mut!((*indio_dev.as_ptr()).modes).write(options.modes as i32);
-            addr_of_mut!((*indio_dev.as_ptr()).channels)
+            let dev = indio_dev.as_ptr();
+            (&raw mut (*dev).name).write(options.name.as_char_ptr());
+            (&raw mut (*dev).modes).write(options.modes as i32);
+            (&raw mut (*dev).channels)
                 .write(T::CHANNELS.as_ptr() as *const bindings::iio_chan_spec);
-            addr_of_mut!((*indio_dev.as_ptr()).num_channels).write(T::CHANNELS.len() as ffi::c_int);
-            addr_of_mut!((*indio_dev.as_ptr()).info)
+            (&raw mut (*dev).num_channels).write(T::CHANNELS.len() as ffi::c_int);
+            (&raw mut (*dev).info)
                 .write(IioVTableAdapter::<T>::build() as *const bindings::iio_info);
         }
 
