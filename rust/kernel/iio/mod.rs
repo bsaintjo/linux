@@ -2,6 +2,7 @@
 #![allow(unused_variables)]
 #![allow(missing_docs)]
 #![allow(unused_imports)]
+#![allow(unreachable_code)]
 use core::{
     marker::PhantomData,
     mem::{self, ManuallyDrop, MaybeUninit},
@@ -25,43 +26,33 @@ pub struct Device<T: Driver> {
 unsafe impl<T: Send + Sync + Driver> Send for Device<T> {}
 unsafe impl<T: Send + Sync + Driver> Sync for Device<T> {}
 
-pub struct DeviceRef(NonNull<bindings::iio_dev>);
+pub struct DeviceRef<'a>(NonNull<bindings::iio_dev>, PhantomData<&'a ()>);
 
-impl DeviceRef {
+impl<'a> DeviceRef<'a> {
     pub(crate) fn inner(&self) -> NonNull<bindings::iio_dev> {
         self.0
     }
 }
 
 impl<T: Driver> Device<T> {
-    fn from_raw(indio_dev: *mut bindings::iio_dev) -> Self {
-        let indio_dev = unsafe { NonNull::new_unchecked(indio_dev) };
-        Self {
-            indio_dev,
-            _priv: PhantomData,
-        }
-    }
-
-    pub(crate) fn dev_ref(&self) -> DeviceRef {
-        DeviceRef(self.indio_dev)
-    }
-
     // Useful when state needs to be initialized based on the iio device
     // Such as with triggers
-    fn register_with(
+    pub fn register_with<P>(
         parent: ARef<device::Device>,
         module: &'static ThisModule,
         options: RegistrationOptions,
-        data: impl PinInit<T::Data>,
-        with_device: impl FnOnce(DeviceRef) -> Result<(), Error>,
-    ) -> Result<Self> {
+        with_device: impl FnOnce(DeviceRef<'_>) -> P,
+    ) -> Result<Self>
+    where
+        P: PinInit<T::Data, Error>, // impl not allowed in return type so use a where clause
+    {
         let sizeof_priv = mem::size_of::<T::Data>();
         let indio_dev = NonNull::new(unsafe {
             bindings::iio_device_alloc(parent.as_raw(), sizeof_priv as i32)
         })
         .ok_or(ENOMEM)?;
-        let dev_ref = DeviceRef(indio_dev);
-        with_device(dev_ref)?;
+        let dev_ref = DeviceRef(indio_dev, PhantomData);
+        let data = with_device(dev_ref);
         let private: *mut T::Data =
             unsafe { bindings::iio_priv(indio_dev.as_ptr()) } as *mut T::Data;
 
@@ -74,6 +65,7 @@ impl<T: Driver> Device<T> {
                 bindings::iio_device_free(indio_dev.as_ptr());
             })?;
         }
+
         unsafe {
             addr_of_mut!((*indio_dev.as_ptr()).name).write(options.name.as_char_ptr());
             addr_of_mut!((*indio_dev.as_ptr()).modes).write(options.modes as i32);
@@ -83,6 +75,7 @@ impl<T: Driver> Device<T> {
             addr_of_mut!((*indio_dev.as_ptr()).info)
                 .write(IioVTableAdapter::<T>::build() as *const bindings::iio_info);
         }
+
         unsafe {
             to_result(bindings::__iio_device_register(
                 indio_dev.as_ptr(),
@@ -117,7 +110,7 @@ pub struct Channel;
 
 #[vtable]
 pub trait Driver: Sized {
-    const CHANNELS: &'static [Channel];
+    const CHANNELS: &'static [Channel] = &[];
     type Data: Send + Sync;
 
     fn read_raw(device: &Device<Self>) {
@@ -136,7 +129,6 @@ impl<T: Driver> IioVTableAdapter<T> {
         indio_dev: *mut bindings::iio_dev,
         iio_chan_spec: *const bindings::iio_chan_spec,
         val: *mut ffi::c_int,
-        // Ignore for now
         _val2: *mut ffi::c_int,
         _mask: isize,
     ) -> ffi::c_int {
