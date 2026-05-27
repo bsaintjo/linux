@@ -222,7 +222,7 @@ impl SensorData {
         SensorData::Int(x)
     }
 
-    pub(crate) fn sensor_value(&self) -> SensorValue {
+    pub(crate) const fn sensor_value(&self) -> SensorValue {
         match self {
             SensorData::Int(_) => SensorValue::Int,
         }
