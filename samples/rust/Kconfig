@@ -95,6 +95,17 @@ config SAMPLE_RUST_DRIVER_I2C
 
 	  If unsure, say N.
 
+config SAMPLE_RUST_DRIVER_IIO
+	tristate "IIO Driver"
+	depends on IIO=y
+	help
+	  This option builds the Rust IIO driver sample.
+
+	  To compile this as a module, choose M here:
+	  the module will be called rust_driver_iio.
+
+	  If unsure, say N.
+
 config SAMPLE_RUST_I2C_CLIENT
 	tristate "I2C Client Registration"
 	depends on I2C=y
